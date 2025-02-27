@@ -223,7 +223,6 @@ class AgentController
                 'ASSIGNED_BY_ID' => $userId
             ];
 
-            // Add date filters if provided
             if ($dateFrom) {
                 $filter['>DATE_CREATE'] = $dateFrom;
             }
@@ -232,7 +231,6 @@ class AgentController
                 $filter['<DATE_CREATE'] = $dateTo;
             }
 
-            // Convert filter to query string format
             $filterQueryString = http_build_query(['filter' => $filter]);
             $filterQueryString = str_replace(['%5B', '%5D'], ['[', ']'], $filterQueryString);
 
