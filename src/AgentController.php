@@ -23,7 +23,7 @@ class AgentController
     private $maxBatchCommands = 50;
     private $cacheExpiry = 300;
 
-    public function processRequest(string $method, ?string $id, ?string $teamId): void
+    public function processRequest(string $method, ?string $id, ?string $teamId, ?string $dateFrom, ?string $dateTo): void
     {
         if ($method !== 'GET') {
             $this->sendErrorResponse(405, "Method not allowed");
@@ -31,17 +31,24 @@ class AgentController
         }
 
         if ($id) {
-            $this->processResourceRequest($id);
-        } elseif ($teamId) {
-            $this->processTeamRequest($teamId);
-        } else {
-            $this->processCollectionRequest();
+            $this->processResourceRequest($id, $dateFrom, $dateTo);
+            return;
         }
+
+        if ($teamId) {
+            $this->processTeamRequest($teamId, $dateFrom, $dateTo);
+            return;
+        }
+
+        $this->processCollectionRequest($dateFrom, $dateTo);
     }
 
-    private function processResourceRequest(string $id): void
+    private function processResourceRequest(string $id, ?string $dateFrom, ?string $dateTo): void
     {
         $cacheKey = "user_leads_{$id}";
+        if ($dateFrom && $dateTo) {
+            $cacheKey .= "_{$dateFrom}_{$dateTo}";
+        }
         $cachedData = $this->getCache($cacheKey);
 
         if ($cachedData !== false) {
@@ -62,7 +69,7 @@ class AgentController
         $user = $userResponse['result'][0];
         $userName = trim("{$user['NAME']} {$user['LAST_NAME']}");
 
-        $response = $this->fetchUserLeads($id);
+        $response = $this->fetchUserLeads($id, $dateFrom, $dateTo);
 
         $leadCounts = ['name' => $userName];
         foreach ($this->stageMappings as $stage => $statusId) {
@@ -74,9 +81,12 @@ class AgentController
         $this->sendJsonResponse($leadCounts);
     }
 
-    private function processCollectionRequest(): void
+    private function processCollectionRequest(?string $dateFrom, ?string $dateTo): void
     {
         $cacheKey = "all_user_leads";
+        if ($dateFrom && $dateTo) {
+            $cacheKey .= "_{$dateFrom}_{$dateTo}";
+        }
         $cachedData = $this->getCache($cacheKey);
 
         if ($cachedData !== false) {
@@ -106,7 +116,7 @@ class AgentController
                 $userId = $user['ID'];
                 $userName = trim("{$user['NAME']} {$user['LAST_NAME']}");
 
-                $leadCounts = $this->fetchUserLeads($userId);
+                $leadCounts = $this->fetchUserLeads($userId, $dateFrom, $dateTo);
 
                 $userLeadCounts[$userId] = ['name' => $userName];
                 foreach ($this->stageMappings as $stage => $statusId) {
@@ -122,7 +132,7 @@ class AgentController
         $this->sendJsonResponse($userLeadCounts);
     }
 
-    private function processTeamRequest(string $teamId): void
+    private function processTeamRequest(string $teamId, ?string $dateFrom, ?string $dateTo): void
     {
         $teamResponse = CRest::call('department.get', ['ID' => $teamId]);
 
@@ -133,6 +143,9 @@ class AgentController
 
         $teamName = $teamResponse['result'][0]['NAME'] ?? "Unknown Team";
         $cacheKey = "team_leads_{$teamId}";
+        if ($dateFrom && $dateTo) {
+            $cacheKey .= "_{$dateFrom}_{$dateTo}";
+        }
         $cachedData = $this->getCache($cacheKey);
 
         if ($cachedData !== false) {
@@ -163,7 +176,7 @@ class AgentController
                 $userId = $user['ID'];
                 $userName = trim("{$user['NAME']} {$user['LAST_NAME']}");
 
-                $leadCounts = $this->fetchUserLeads($userId);
+                $leadCounts = $this->fetchUserLeads($userId, $dateFrom, $dateTo);
 
                 $userLeadCounts[$userId] = ['name' => $userName];
                 foreach ($this->stageMappings as $stage => $statusId) {
@@ -196,7 +209,7 @@ class AgentController
         $this->sendJsonResponse($result);
     }
 
-    private function fetchUserLeads(string $userId): array
+    private function fetchUserLeads(string $userId, ?string $dateFrom = null, ?string $dateTo = null): array
     {
         $batchCommands = [];
         $batchResults = [];
@@ -204,7 +217,26 @@ class AgentController
 
         foreach ($this->stageMappings as $stage => $statusId) {
             $stageKey = strtolower($stage);
-            $batchCommands[$stageKey] = "crm.lead.list?filter[STATUS_ID]={$statusId}&filter[ASSIGNED_BY_ID]={$userId}&select[]=ID";
+
+            $filter = [
+                'STATUS_ID' => $statusId,
+                'ASSIGNED_BY_ID' => $userId
+            ];
+
+            // Add date filters if provided
+            if ($dateFrom) {
+                $filter['>DATE_CREATE'] = $dateFrom;
+            }
+
+            if ($dateTo) {
+                $filter['<DATE_CREATE'] = $dateTo;
+            }
+
+            // Convert filter to query string format
+            $filterQueryString = http_build_query(['filter' => $filter]);
+            $filterQueryString = str_replace(['%5B', '%5D'], ['[', ']'], $filterQueryString);
+
+            $batchCommands[$stageKey] = "crm.lead.list?{$filterQueryString}&select[]=ID";
             $batchCount++;
 
             if ($batchCount >= $this->maxBatchCommands) {
