@@ -18,33 +18,28 @@ $dateFrom = null;
 $dateTo = null;
 
 $agentIndex = array_search('agents', $parts);
+$teamIndex = array_search('teams', $parts);
 
 if ($agentIndex !== false) {
-    $route = $parts[$agentIndex];
-
-    if (isset($parts[$agentIndex + 1])) {
-        $id = $parts[$agentIndex + 1];
-    }
-
-    if (isset($_GET['team'])) {
-        $teamId = $_GET['team'];
-    }
-
-    if (isset($_GET['datefrom'])) {
-        $dateFrom = $_GET['datefrom'];
-    }
-
-    if (isset($_GET['dateto'])) {
-        $dateTo = $_GET['dateto'];
-    }
+    $route = 'agents';
+    $id = $parts[$agentIndex + 1] ?? null;
+    $teamId = $_GET['team'] ?? null;
+    $dateFrom = $_GET['datefrom'] ?? null;
+    $dateTo = $_GET['dateto'] ?? null;
+    
+    $controller = new AgentController();
+    $controller->processRequest($_SERVER['REQUEST_METHOD'], $id, $teamId, $dateFrom, $dateTo);
+} elseif ($teamIndex !== false) {
+    $route = 'teams';
+    $id = $parts[$teamIndex + 1] ?? null;
+    
+    $controller = new TeamController();
+    $controller->processRequest($_SERVER['REQUEST_METHOD'], $id);
 } else {
     header("Content-Type: application/json");
     http_response_code(404);
     echo json_encode(["error" => "Resource not found"]);
     exit;
 }
-
-$controller = new AgentController();
-$controller->processRequest($_SERVER['REQUEST_METHOD'], $id, $teamId, $dateFrom, $dateTo);
 
 exit;
