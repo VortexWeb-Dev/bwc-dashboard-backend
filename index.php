@@ -19,6 +19,7 @@ $dateTo = null;
 
 $agentIndex = array_search('agents', $parts);
 $teamIndex = array_search('teams', $parts);
+$leadIndex = array_search('leads', $parts);
 
 if ($agentIndex !== false) {
     $route = 'agents';
@@ -26,15 +27,24 @@ if ($agentIndex !== false) {
     $teamId = $_GET['team'] ?? null;
     $dateFrom = $_GET['datefrom'] ?? null;
     $dateTo = $_GET['dateto'] ?? null;
-    
+
     $controller = new AgentController();
     $controller->processRequest($_SERVER['REQUEST_METHOD'], $id, $teamId, $dateFrom, $dateTo);
 } elseif ($teamIndex !== false) {
     $route = 'teams';
     $id = $parts[$teamIndex + 1] ?? null;
-    
+
     $controller = new TeamController();
     $controller->processRequest($_SERVER['REQUEST_METHOD'], $id);
+} elseif ($leadIndex !== false) {
+    $route = 'leads';
+    $id = $parts[$leadIndex + 1] ?? null;
+    $teamId = $_GET['team'] ?? null;
+    $dateFrom = $_GET['datefrom'] ?? null;
+    $dateTo = $_GET['dateto'] ?? null;
+
+    $controller = new LeadController();
+    $controller->processRequest($_SERVER['REQUEST_METHOD'], $id, $teamId, $dateFrom, $dateTo);
 } else {
     header("Content-Type: application/json");
     http_response_code(404);

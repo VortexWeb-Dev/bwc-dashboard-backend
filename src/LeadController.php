@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . "/../crest/crest.php";
 
-class AgentController
+class LeadController
 {
     private $stageMappings = [
         'ALLOCATED' => "NEW",
@@ -45,7 +45,7 @@ class AgentController
 
     private function processResourceRequest(string $id, ?string $dateFrom, ?string $dateTo): void
     {
-        $cacheKey = "user_reports_{$id}";
+        $cacheKey = "user_leads_{$id}";
         if ($dateFrom && $dateTo) {
             $cacheKey .= "_{$dateFrom}_{$dateTo}";
         }
@@ -71,19 +71,26 @@ class AgentController
 
         $response = $this->fetchUserLeads($id, $dateFrom, $dateTo);
 
-        $leadCounts = ['name' => $userName];
+        $leadData = ['name' => $userName];
+
         foreach ($this->stageMappings as $stage => $statusId) {
             $stageKey = strtolower($stage);
-            $leadCounts[$stageKey] = isset($response[$stageKey]) ? count($response[$stageKey]) : 0;
+            $leadData[$stageKey] = $response[$stageKey];
         }
 
-        $this->setCache($cacheKey, $leadCounts);
-        $this->sendJsonResponse($leadCounts);
+        $result = [
+            'user_id' => $id,
+            'user_name' => $userName,
+            'lead_details' => $leadData
+        ];
+
+        $this->setCache($cacheKey, $result);
+        $this->sendJsonResponse($result);
     }
 
     private function processCollectionRequest(?string $dateFrom, ?string $dateTo): void
     {
-        $cacheKey = "all_user_reports";
+        $cacheKey = "all_user_leads";
         if ($dateFrom && $dateTo) {
             $cacheKey .= "_{$dateFrom}_{$dateTo}";
         }
@@ -105,31 +112,34 @@ class AgentController
         }
 
         $users = $usersResponse['result'];
-        $userLeadCounts = [];
+        $userLeadDetails = [];
 
         $userBatches = array_chunk($users, 5);
 
         foreach ($userBatches as $userBatch) {
-            $userPromises = [];
-
             foreach ($userBatch as $user) {
                 $userId = $user['ID'];
                 $userName = trim("{$user['NAME']} {$user['LAST_NAME']}");
 
                 $leadCounts = $this->fetchUserLeads($userId, $dateFrom, $dateTo);
 
-                $userLeadCounts[$userId] = ['name' => $userName];
+                $userLeadDetails[$userId] = ['name' => $userName];
+
                 foreach ($this->stageMappings as $stage => $statusId) {
                     $stageKey = strtolower($stage);
-                    $userLeadCounts[$userId][$stageKey] = isset($leadCounts[$stageKey]) ? count($leadCounts[$stageKey]) : 0;
+                    $userLeadDetails[$userId][$stageKey] = $leadCounts[$stageKey] ?? [];
                 }
             }
 
             usleep(200000);
         }
 
-        $this->setCache($cacheKey, $userLeadCounts);
-        $this->sendJsonResponse($userLeadCounts);
+        $result = [
+            'user_lead_details' => $userLeadDetails
+        ];
+
+        $this->setCache($cacheKey, $result);
+        $this->sendJsonResponse($result);
     }
 
     private function processTeamRequest(string $teamId, ?string $dateFrom, ?string $dateTo): void
@@ -142,7 +152,7 @@ class AgentController
         }
 
         $teamName = $teamResponse['result'][0]['NAME'] ?? "Unknown Team";
-        $cacheKey = "team_reports_{$teamId}";
+        $cacheKey = "team_leads_{$teamId}";
         if ($dateFrom && $dateTo) {
             $cacheKey .= "_{$dateFrom}_{$dateTo}";
         }
@@ -169,6 +179,7 @@ class AgentController
 
         $users = $usersResponse['result'];
         $userLeadCounts = [];
+        $userLeadDetails = [];
         $userBatches = array_chunk($users, 5);
 
         foreach ($userBatches as $userBatch) {
@@ -179,9 +190,12 @@ class AgentController
                 $leadCounts = $this->fetchUserLeads($userId, $dateFrom, $dateTo);
 
                 $userLeadCounts[$userId] = ['name' => $userName];
+                $userLeadDetails[$userId] = ['name' => $userName];
+
                 foreach ($this->stageMappings as $stage => $statusId) {
                     $stageKey = strtolower($stage);
                     $userLeadCounts[$userId][$stageKey] = isset($leadCounts[$stageKey]) ? count($leadCounts[$stageKey]) : 0;
+                    $userLeadDetails[$userId][$stageKey] = $leadCounts[$stageKey] ?? [];
                 }
             }
 
@@ -201,8 +215,7 @@ class AgentController
         $result = [
             'team_id' => $teamId,
             'team_name' => $teamName,
-            'team_total' => $teamTotals,
-            'members' => $userLeadCounts
+            'member_lead_details' => $userLeadDetails
         ];
 
         $this->setCache($cacheKey, $result);
@@ -231,16 +244,32 @@ class AgentController
                 $filter['<DATE_CREATE'] = $dateTo;
             }
 
-            $filterQueryString = http_build_query(['filter' => $filter]);
+            $selectFields = [
+                'ID',
+                'TITLE',
+                'STATUS_ID',
+                'DATE_CREATE',
+                'PHONE',
+                'EMAIL',
+                'COMMENTS',
+                'ASSIGNED_BY_ID',
+                'NAME',
+                'LAST_NAME'
+            ];
+
+            $filterQueryString = http_build_query([
+                'filter' => $filter,
+                'select' => $selectFields
+            ]);
             $filterQueryString = str_replace(['%5B', '%5D'], ['[', ']'], $filterQueryString);
 
-            $batchCommands[$stageKey] = "crm.lead.list?{$filterQueryString}&select[]=ID";
+            $batchCommands[$stageKey] = "crm.lead.list?{$filterQueryString}";
             $batchCount++;
 
             if ($batchCount >= $this->maxBatchCommands) {
                 $response = CRest::call('batch', ['cmd' => $batchCommands, 'halt' => 0]);
                 if (isset($response['result']['result'])) {
-                    $batchResults = array_merge($batchResults, $response['result']['result']);
+                    $batchResults = array_merge_recursive($batchResults, $response['result']['result']);
                 }
                 $batchCommands = [];
                 $batchCount = 0;
@@ -250,11 +279,17 @@ class AgentController
         if (!empty($batchCommands)) {
             $response = CRest::call('batch', ['cmd' => $batchCommands, 'halt' => 0]);
             if (isset($response['result']['result'])) {
-                $batchResults = array_merge($batchResults, $response['result']['result']);
+                $batchResults = array_merge_recursive($batchResults, $response['result']['result']);
             }
         }
 
-        return $batchResults;
+        $processedResults = [];
+        foreach ($this->stageMappings as $stage => $statusId) {
+            $stageKey = strtolower($stage);
+            $processedResults[$stageKey] = $batchResults[$stageKey] ?? [];
+        }
+
+        return $processedResults;
     }
 
     private function getCache(string $key)
