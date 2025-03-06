@@ -95,7 +95,7 @@ class AgentController
         }
 
         $usersResponse = CRest::call('user.get', [
-            'filter' => ['ACTIVE' => true, '!=ID' => [9, 11, 67]],
+            'filter' => ['ACTIVE' => true, '!=ID' => [9, 11]],
             'select' => ['ID', 'NAME', 'LAST_NAME']
         ]);
 
@@ -157,7 +157,7 @@ class AgentController
             'filter' => [
                 'ACTIVE' => true,
                 'UF_DEPARTMENT' => $teamId,
-                '!=ID' => [9, 11, 67]
+                '!=ID' => [9, 11]
             ],
             'select' => ['ID', 'NAME', 'LAST_NAME', 'UF_DEPARTMENT']
         ]);
