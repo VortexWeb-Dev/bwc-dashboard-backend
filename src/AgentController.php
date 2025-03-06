@@ -5,19 +5,19 @@ class AgentController
 {
     private $stageMappings = [
         'ALLOCATED' => "NEW",
-        'INTERESTED' => 1,
         'NOT_INTERESTED' => 2,
         'CLOSED' => 3,
         'MEETING_BOOKED' => 4,
         'MEETING_DONE' => 5,
-        'SEND_MESSAGE' => "UC_DHXASQ",
         'NO_ANSWER' => "PROCESSED",
         'INVALID_NUMBER' => 6,
         'NEVER_ANSWERED' => 7,
         'CALL_BACK' => 8,
-        'LATE_FOLLOWUP' => 9,
-        'TODAY_FOLLOWUP' => 10,
-        'FUTURE_FOLLOWUP' => 11,
+        // 'INTERESTED' => 1,
+        // 'SEND_MESSAGE' => "UC_DHXASQ",
+        // 'LATE_FOLLOWUP' => 9,
+        // 'TODAY_FOLLOWUP' => 10,
+        // 'FUTURE_FOLLOWUP' => 11,
     ];
 
     private $maxBatchCommands = 50;
